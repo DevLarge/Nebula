@@ -1,7 +1,8 @@
+import { mkdirs } from 'fs-extra/esm'
 import { join } from 'path'
-import { BaseFileStructure } from '../BaseFileStructure'
-import { LibRepoStructure } from './LibRepo.struct'
-import { VersionRepoStructure } from './VersionRepo.struct'
+import { BaseFileStructure } from '../BaseFileStructure.js'
+import { LibRepoStructure } from './LibRepo.struct.js'
+import { VersionRepoStructure } from './VersionRepo.struct.js'
 
 export class RepoStructure extends BaseFileStructure {
 
@@ -25,6 +26,7 @@ export class RepoStructure extends BaseFileStructure {
         super.init()
         await this.libRepoStruct.init()
         await this.versionRepoStruct.init()
+        await mkdirs(this.getCacheDirectory())
     }
 
     public getLibRepoStruct(): LibRepoStructure {
@@ -41,6 +43,14 @@ export class RepoStructure extends BaseFileStructure {
 
     public getWorkDirectory(): string {
         return join(this.absoluteRoot, 'work')
+    }
+
+    public getCacheDirectory(): string {
+        return join(this.absoluteRoot, 'cache')
+    }
+
+    public getForgeCacheDirectory(artifactVersion: string): string {
+        return join(this.getCacheDirectory(), 'forge', artifactVersion)
     }
 
 }

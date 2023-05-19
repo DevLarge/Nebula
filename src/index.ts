@@ -1,17 +1,20 @@
 /* tslint:disable:no-shadowed-variable */
 import dotenv from 'dotenv'
-import { writeFile } from 'fs-extra'
+import { writeFile } from 'fs/promises'
 import { resolve as resolvePath } from 'path'
 import { URL } from 'url'
 import { inspect } from 'util'
-import yargs from 'yargs'
-import { DistributionStructure } from './structure/spec_model/Distribution.struct'
-import { ServerStructure } from './structure/spec_model/Server.struct'
-import { VersionSegmentedRegistry } from './util/VersionSegmentedRegistry'
-import { VersionUtil } from './util/versionutil'
-import { MinecraftVersion } from './util/MinecraftVersion'
-import { LoggerUtil } from './util/LoggerUtil'
-import { generateSchemas } from './util/SchemaUtil'
+import yargs from 'yargs/yargs'
+import { Argv, CommandModule } from 'yargs'
+import { hideBin } from 'yargs/helpers'
+import { DistributionStructure } from './structure/spec_model/Distribution.struct.js'
+import { ServerStructure } from './structure/spec_model/Server.struct.js'
+import { VersionSegmentedRegistry } from './util/VersionSegmentedRegistry.js'
+import { VersionUtil } from './util/VersionUtil.js'
+import { MinecraftVersion } from './util/MinecraftVersion.js'
+import { LoggerUtil } from './util/LoggerUtil.js'
+import { generateSchemas } from './util/SchemaUtil.js'
+import { CurseForgeParser } from './parser/CurseForgeParser.js'
 
 dotenv.config()
 
@@ -41,7 +44,7 @@ function getBaseURL(): string {
     return (new URL(baseUrl)).toString()
 }
 
-function installLocalOption(yargs: yargs.Argv) {
+function installLocalOption(yargs: Argv): Argv {
     return yargs.option('installLocal', {
         describe: 'Install the generated distribution to your local Helios data folder.',
         type: 'boolean',
@@ -51,7 +54,27 @@ function installLocalOption(yargs: yargs.Argv) {
     })
 }
 
-// function rootOption(yargs: yargs.Argv) {
+function discardOutputOption(yargs: Argv): Argv {
+    return yargs.option('discardOutput', {
+        describe: 'Delete cached output after it is no longer required. May be useful if disk space is limited.',
+        type: 'boolean',
+        demandOption: false,
+        global: false,
+        default: false
+    })
+}
+
+function invalidateCacheOption(yargs: Argv): Argv {
+    return yargs.option('invalidateCache', {
+        describe: 'Invalidate and delete existing caches as they are encountered. Requires fresh cache generation.',
+        type: 'boolean',
+        demandOption: false,
+        global: false,
+        default: false
+    })
+}
+
+// function rootOption(yargs: Argv) {
 //     return yargs.option('root', {
 //         describe: 'File structure root.',
 //         type: 'string',
@@ -63,7 +86,7 @@ function installLocalOption(yargs: yargs.Argv) {
 //     })
 // }
 
-// function baseUrlOption(yargs: yargs.Argv) {
+// function baseUrlOption(yargs: Argv) {
 //     return yargs.option('baseUrl', {
 //         describe: 'Base url of your file host.',
 //         type: 'string',
@@ -86,7 +109,7 @@ function installLocalOption(yargs: yargs.Argv) {
 // }
 
 // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
-function namePositional(yargs: yargs.Argv) {
+function namePositional(yargs: Argv) {
     return yargs.option('name', {
         describe: 'Distribution index file name.',
         type: 'string',
@@ -97,7 +120,7 @@ function namePositional(yargs: yargs.Argv) {
 // -------------
 // Init Commands
 
-const initRootCommand: yargs.CommandModule = {
+const initRootCommand: CommandModule = {
     command: 'root',
     describe: 'Generate an empty standard file structure.',
     builder: (yargs) => {
@@ -111,7 +134,8 @@ const initRootCommand: yargs.CommandModule = {
         logger.debug('Invoked init root.')
         try {
             await generateSchemas(argv.root as string)
-            await new DistributionStructure(argv.root as string, '').init()
+            await new DistributionStructure(argv.root as string, '', false, false).init()
+            await new CurseForgeParser(argv.root as string, '').init()
             logger.info(`Successfully created new root at ${argv.root}`)
         } catch (error) {
             logger.error(`Failed to init new root at ${argv.root}`, error)
@@ -119,7 +143,7 @@ const initRootCommand: yargs.CommandModule = {
     }
 }
 
-const initCommand: yargs.CommandModule = {
+const initCommand: CommandModule = {
     command: 'init',
     aliases: ['i'],
     describe: 'Base init command.',
@@ -135,7 +159,7 @@ const initCommand: yargs.CommandModule = {
 // -----------------
 // Generate Commands
 
-const generateServerCommand: yargs.CommandModule = {
+const generateServerCommand: CommandModule = {
     command: 'server <id> <version>',
     describe: 'Generate a new server configuration.',
     builder: (yargs) => {
@@ -154,19 +178,13 @@ const generateServerCommand: yargs.CommandModule = {
                 type: 'string',
                 default: null
             })
-            .option('liteloader', {
-                describe: 'LiteLoader version.',
-                type: 'string',
-                default: null
-            })
     },
     handler: async (argv) => {
         argv.root = getRoot()
 
         logger.debug(`Root set to ${argv.root}`)
         logger.debug(`Generating server ${argv.id} for Minecraft ${argv.version}.`,
-            `\n\t├ Forge version: ${argv.forge}`,
-            `\n\t└ LiteLoader version: ${argv.liteloader}`)
+            `\n\t└ Forge version: ${argv.forge}`)
 
         const minecraftVersion = new MinecraftVersion(argv.version as string)
 
@@ -179,24 +197,71 @@ const generateServerCommand: yargs.CommandModule = {
             }
         }
 
-        const serverStruct = new ServerStructure(argv.root as string, getBaseURL())
+        const serverStruct = new ServerStructure(argv.root as string, getBaseURL(), false, false)
         serverStruct.createServer(
             argv.id as string,
             minecraftVersion,
             {
-                forgeVersion: argv.forge as string,
-                liteloaderVersion: argv.liteloader as string
+                forgeVersion: argv.forge as string
             }
         )
-
     }
 }
 
-const generateDistroCommand: yargs.CommandModule = {
+const generateServerCurseForgeCommand: CommandModule = {
+    command: 'server-curseforge <id> <zipName>',
+    describe: 'Generate a new server configuration from a CurseForge modpack.',
+    builder: (yargs) => {
+        // yargs = rootOption(yargs)
+        return yargs
+            .positional('id', {
+                describe: 'Server id.',
+                type: 'string'
+            })
+            .positional('zipName', {
+                describe: 'The name of the modpack zip file.',
+                type: 'string'
+            })
+    },
+    handler: async (argv) => {
+        argv.root = getRoot()
+
+        logger.debug(`Root set to ${argv.root}`)
+        logger.debug(`Generating server ${argv.id} using CurseForge modpack ${argv.zipName} as a template.`)
+
+        const parser = new CurseForgeParser(argv.root as string, argv.zipName as string)
+        const modpackManifest = await parser.getModpackManifest()
+
+        const minecraftVersion = new MinecraftVersion(modpackManifest.minecraft.version)
+
+        // Extract forge version
+        const forgeModLoader = modpackManifest.minecraft.modLoaders.find(({ id }) => id.toLowerCase().startsWith('forge-'))
+        const forgeVersion = forgeModLoader != null ? forgeModLoader.id.substring('forge-'.length) : undefined
+        logger.debug(`Forge version set to ${forgeVersion}`)
+
+        const serverStruct = new ServerStructure(argv.root as string, getBaseURL(), false, false)
+        const createServerResult = await serverStruct.createServer(
+            argv.id as string,
+            minecraftVersion,
+            {
+                version: modpackManifest.version,
+                forgeVersion
+            }
+        )
+
+        if(createServerResult) {
+            await parser.enrichServer(createServerResult, modpackManifest)
+        }
+    }
+}
+
+const generateDistroCommand: CommandModule = {
     command: 'distro [name]',
     describe: 'Generate a distribution index from the root file structure.',
     builder: (yargs) => {
         yargs = installLocalOption(yargs)
+        yargs = discardOutputOption(yargs)
+        yargs = invalidateCacheOption(yargs)
         yargs = namePositional(yargs)
         return yargs
     },
@@ -209,9 +274,13 @@ const generateDistroCommand: yargs.CommandModule = {
         logger.debug(`Root set to ${argv.root}`)
         logger.debug(`Base Url set to ${argv.baseUrl}`)
         logger.debug(`Install option set to ${argv.installLocal}`)
+        logger.debug(`Discard Output option set to ${argv.discardOutput}`)
+        logger.debug(`Invalidate Cache option set to ${argv.invalidateCache}`)
         logger.debug(`Invoked generate distro name ${finalName}.`)
 
         const doLocalInstall = argv.installLocal as boolean
+        const discardOutput = argv.discardOutput as boolean ?? false
+        const invalidateCache = argv.invalidateCache as boolean ?? false
         const heliosDataFolder = getHeliosDataFolder()
         if(doLocalInstall && heliosDataFolder == null) {
             logger.error('You MUST specify HELIOS_DATA_FOLDER in your .env when using the --installLocal option.')
@@ -219,7 +288,7 @@ const generateDistroCommand: yargs.CommandModule = {
         }
 
         try {
-            const distributionStruct = new DistributionStructure(argv.root as string, argv.baseUrl as string)
+            const distributionStruct = new DistributionStructure(argv.root as string, argv.baseUrl as string, discardOutput, invalidateCache)
             const distro = await distributionStruct.getSpecModel()
             const distroOut = JSON.stringify(distro, null, 2)
             const distroPath = resolvePath(argv.root as string, finalName)
@@ -240,7 +309,7 @@ const generateDistroCommand: yargs.CommandModule = {
     }
 }
 
-const generateSchemasCommand: yargs.CommandModule = {
+const generateSchemasCommand: CommandModule = {
     command: 'schemas',
     describe: 'Generate json schemas.',
     handler: async (argv) => {
@@ -259,12 +328,13 @@ const generateSchemasCommand: yargs.CommandModule = {
     }
 }
 
-const generateCommand: yargs.CommandModule = {
+const generateCommand: CommandModule = {
     command: 'generate',
     aliases: ['g'],
     describe: 'Base generate command.',
     builder: (yargs) => {
         return yargs
+            .command(generateServerCurseForgeCommand)
             .command(generateServerCommand)
             .command(generateDistroCommand)
             .command(generateSchemasCommand)
@@ -274,7 +344,7 @@ const generateCommand: yargs.CommandModule = {
     }
 }
 
-const validateCommand: yargs.CommandModule = {
+const validateCommand: CommandModule = {
     command: 'validate [name]',
     describe: 'Validate a distribution.json against the spec.',
     builder: (yargs) => {
@@ -285,7 +355,7 @@ const validateCommand: yargs.CommandModule = {
     }
 }
 
-const latestForgeCommand: yargs.CommandModule = {
+const latestForgeCommand: CommandModule = {
     command: 'latest-forge <version>',
     describe: 'Get the latest version of forge.',
     handler: async (argv) => {
@@ -297,7 +367,7 @@ const latestForgeCommand: yargs.CommandModule = {
     }
 }
 
-const recommendedForgeCommand: yargs.CommandModule = {
+const recommendedForgeCommand: CommandModule = {
     command: 'recommended-forge <version>',
     describe: 'Get the recommended version of forge. Returns latest if there is no recommended build.',
     handler: async (argv) => {
@@ -322,7 +392,7 @@ const recommendedForgeCommand: yargs.CommandModule = {
     }
 }
 
-const testCommand: yargs.CommandModule = {
+const testCommand: CommandModule = {
     command: 'test <mcVer> <forgeVer>',
     describe: 'Validate a distribution.json against the spec.',
     builder: (yargs) => {
@@ -333,7 +403,7 @@ const testCommand: yargs.CommandModule = {
         logger.info(process.cwd())
         const mcVer = new MinecraftVersion(argv.mcVer as string)
         const resolver = VersionSegmentedRegistry.getForgeResolver(mcVer,
-            argv.forgeVer as string, getRoot(), '', getBaseURL())
+            argv.forgeVer as string, getRoot(), '', getBaseURL(), false, false)
         if (resolver != null) {
             const mdl = await resolver.getModule()
             logger.info(inspect(mdl, false, null, true))
@@ -343,7 +413,7 @@ const testCommand: yargs.CommandModule = {
 
 // Registering yargs configuration.
 // tslint:disable-next-line:no-unused-expression
-yargs
+yargs(hideBin(process.argv))
     .version(false)
     .scriptName('')
     .command(initCommand)

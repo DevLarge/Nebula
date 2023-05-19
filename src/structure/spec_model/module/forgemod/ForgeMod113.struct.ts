@@ -1,11 +1,11 @@
 import StreamZip from 'node-stream-zip'
 import toml from 'toml'
-import { capitalize } from '../../../../util/stringutils'
-import { VersionUtil } from '../../../../util/versionutil'
-import { ModsToml } from '../../../../model/forge/modstoml'
-import { BaseForgeModStructure } from '../ForgeMod.struct'
-import { MinecraftVersion } from '../../../../util/MinecraftVersion'
-import { UntrackedFilesOption } from '../../../../model/nebula/servermeta'
+import { capitalize } from '../../../../util/StringUtils.js'
+import { VersionUtil } from '../../../../util/VersionUtil.js'
+import { ModsToml } from '../../../../model/forge/ModsToml.js'
+import { BaseForgeModStructure } from '../ForgeMod.struct.js'
+import { MinecraftVersion } from '../../../../util/MinecraftVersion.js'
+import { UntrackedFilesOption } from '../../../../model/nebula/ServerMeta.js'
 
 export class ForgeModStructure113 extends BaseForgeModStructure {
 
@@ -13,7 +13,7 @@ export class ForgeModStructure113 extends BaseForgeModStructure {
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     public static isForVersion(version: MinecraftVersion, libraryVersion: string): boolean {
-        return VersionUtil.isVersionAcceptable(version, [13, 14, 15, 16])
+        return VersionUtil.isVersionAcceptable(version, [13, 14, 15, 16, 17, 18, 19])
     }
 
     private forgeModMetadata: {[property: string]: ModsToml | undefined} = {}
@@ -53,7 +53,10 @@ export class ForgeModStructure113 extends BaseForgeModStructure {
                     storeEntries: true
                 })
 
-                zip.on('error', err => reject(err))
+                zip.on('error', err => {
+                    this.logger.error(`Failure while processing ${path}`)
+                    reject(err)
+                })
                 zip.on('ready', () => {
                     try {
                         const res = this.processZip(zip, name, path)
@@ -152,7 +155,7 @@ export class ForgeModStructure113 extends BaseForgeModStructure {
                     try {
                         const manifest = zip.entryDataSync('META-INF/MANIFEST.MF')
                         const keys = manifest.toString().split('\n')
-                        this.logger.debug(keys)
+                        // this.logger.debug(keys)
                         for (const key of keys) {
                             const match = ForgeModStructure113.IMPLEMENTATION_VERSION_REGEX.exec(key)
                             if (match != null) {

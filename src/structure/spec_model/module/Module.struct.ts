@@ -1,14 +1,16 @@
-import minimatch from 'minimatch'
+import { minimatch } from 'minimatch'
 import { createHash } from 'crypto'
-import { lstat, pathExists, readdir, readFile, Stats } from 'fs-extra'
+import { pathExists } from 'fs-extra/esm'
+import { Stats } from 'fs'
+import { lstat, readdir, readFile } from 'fs/promises'
 import { Artifact, Module, Type, TypeMetadata } from 'helios-distribution-types'
 import { resolve } from 'path'
-import { BaseModelStructure } from '../BaseModel.struct'
-import { LibraryType } from '../../../model/claritas/ClaritasLibraryType'
-import { ClaritasResult, ClaritasModuleMetadata } from '../../../model/claritas/ClaritasResult'
-import { ClaritasWrapper } from '../../../util/java/ClaritasWrapper'
-import { MinecraftVersion } from '../../../util/MinecraftVersion'
-import { UntrackedFilesOption } from '../../../model/nebula/servermeta'
+import { BaseModelStructure } from '../BaseModel.struct.js'
+import { LibraryType } from '../../../model/claritas/ClaritasLibraryType.js'
+import { ClaritasResult, ClaritasModuleMetadata } from '../../../model/claritas/ClaritasResult.js'
+import { ClaritasWrapper } from '../../../util/java/ClaritasWrapper.js'
+import { MinecraftVersion } from '../../../util/MinecraftVersion.js'
+import { UntrackedFilesOption } from '../../../model/nebula/ServerMeta.js'
 
 export interface ModuleCandidate {
     file: string
@@ -25,6 +27,9 @@ export abstract class ModuleStructure extends BaseModelStructure<Module> {
 
     private readonly crudeRegex = /(.+?)-(.+).[jJ][aA][rR]/
     protected readonly DEFAULT_VERSION = '0.0.0'
+    protected readonly FILE_NAME_BLACKLIST = [
+        '.gitkeep'
+    ]
 
     protected untrackedFilePatterns: string[]          // List of glob patterns. 
     protected claritasResult!: ClaritasResult
@@ -130,8 +135,10 @@ export abstract class ModuleStructure extends BaseModelStructure<Module> {
                 const filePath = resolve(scanDirectory, file)
                 const stats = await lstat(filePath)
                 if (stats.isFile()) {
-                    if(this.filter == null || this.filter(file, filePath, stats)) {
-                        moduleCandidates.push({file, filePath, stats})
+                    if(!this.FILE_NAME_BLACKLIST.includes(file)) {
+                        if(this.filter == null || this.filter(file, filePath, stats)) {
+                            moduleCandidates.push({file, filePath, stats})
+                        }
                     }
                 }
             }

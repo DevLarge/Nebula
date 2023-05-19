@@ -1,10 +1,11 @@
 import got from 'got'
-import { createWriteStream, mkdirs, pathExists } from 'fs-extra'
+import { mkdirs, pathExists } from 'fs-extra/esm'
+import { createWriteStream } from 'fs'
 import { dirname, join, resolve } from 'path'
-import { resolve as resolveURL } from 'url'
-import { MavenUtil } from '../../util/maven'
-import { BaseFileStructure } from '../BaseFileStructure'
-import { LoggerUtil } from '../../util/LoggerUtil'
+import { URL } from 'url'
+import { MavenUtil } from '../../util/MavenUtil.js'
+import { BaseFileStructure } from '../BaseFileStructure.js'
+import { LoggerUtil } from '../../util/LoggerUtil.js'
 
 export abstract class BaseMavenRepo extends BaseFileStructure {
 
@@ -32,8 +33,8 @@ export abstract class BaseMavenRepo extends BaseFileStructure {
     public getArtifactUrlByComponents(
         baseURL: string, group: string, artifact: string, version: string, classifier?: string, extension = 'jar'
     ): string {
-        return resolveURL(baseURL, join(this.relativeRoot,
-            MavenUtil.mavenComponentsToString(group, artifact, version, classifier, extension)))
+        return new URL(join(this.relativeRoot,
+            MavenUtil.mavenComponentsToString(group, artifact, version, classifier, extension)), baseURL).toString()
     }
 
     public async artifactExists(path: string): Promise<boolean> {
@@ -52,7 +53,7 @@ export abstract class BaseMavenRepo extends BaseFileStructure {
     }
 
     private async downloadArtifactBase(url: string, relative: string): Promise<void> {
-        const resolvedURL = resolveURL(url, relative).toString()
+        const resolvedURL = new URL(relative, url).toString()
         return this.downloadArtifactDirect(resolvedURL, relative)
     }
 
@@ -85,7 +86,7 @@ export abstract class BaseMavenRepo extends BaseFileStructure {
     }
 
     private async headArtifactBase(url: string, relative: string): Promise<boolean> {
-        const resolvedURL = resolveURL(url, relative).toString()
+        const resolvedURL = new URL(relative, url).toString()
         try {
             const response = await got.head({
                 url: resolvedURL

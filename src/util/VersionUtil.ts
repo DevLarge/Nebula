@@ -1,7 +1,7 @@
 import got from 'got'
-import { PromotionsSlim } from '../model/forge/promotionsslim'
-import { MinecraftVersion } from './MinecraftVersion'
-import { LoggerUtil } from './LoggerUtil'
+import { PromotionsSlim } from '../model/forge/PromotionsSlim.js'
+import { MinecraftVersion } from './MinecraftVersion.js'
+import { LoggerUtil } from './LoggerUtil.js'
 
 export class VersionUtil {
 
@@ -65,6 +65,28 @@ export class VersionUtil {
             }
         }
         return version
+    }
+
+    public static versionGte(version: string, min: string): boolean {
+
+        if(version === min) {
+            return true
+        }
+
+        const left = version.split('.').map(x => Number(x))
+        const right = min.split('.').map(x => Number(x))
+
+        if(left.length != right.length) {
+            throw new Error('Cannot compare mismatched versions.')
+        }
+
+        for(let i=0; i<left.length; i++) {
+            if(left[i] > right[i]) {
+                return true
+            }
+        }
+
+        return false
     }
 
 }

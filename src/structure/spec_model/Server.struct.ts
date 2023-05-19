@@ -1,15 +1,21 @@
-import { lstat, mkdirs, pathExists, readdir, readFile, writeFile } from 'fs-extra'
+import { mkdirs, pathExists } from 'fs-extra/esm'
+import { lstat, readdir, readFile, writeFile } from 'fs/promises'
 import { Server, Module } from 'helios-distribution-types'
 import { dirname, join, resolve as resolvePath } from 'path'
-import { resolve as resolveUrl } from 'url'
-import { VersionSegmentedRegistry } from '../../util/VersionSegmentedRegistry'
-import { ServerMeta, getDefaultServerMeta, ServerMetaOptions, UntrackedFilesOption } from '../../model/nebula/servermeta'
-import { BaseModelStructure } from './BaseModel.struct'
-import { MiscFileStructure } from './module/File.struct'
-import { LiteModStructure } from './module/LiteMod.struct'
-import { LibraryStructure } from './module/Library.struct'
-import { MinecraftVersion } from '../../util/MinecraftVersion'
-import { addSchemaToObject, SchemaTypes } from '../../util/SchemaUtil'
+import { URL } from 'url'
+import { VersionSegmentedRegistry } from '../../util/VersionSegmentedRegistry.js'
+import { ServerMeta, getDefaultServerMeta, ServerMetaOptions, UntrackedFilesOption } from '../../model/nebula/ServerMeta.js'
+import { BaseModelStructure } from './BaseModel.struct.js'
+import { MiscFileStructure } from './module/File.struct.js'
+import { LibraryStructure } from './module/Library.struct.js'
+import { MinecraftVersion } from '../../util/MinecraftVersion.js'
+import { addSchemaToObject, SchemaTypes } from '../../util/SchemaUtil.js'
+
+export interface CreateServerResult {
+    forgeModContainer?: string
+    libraryContainer: string
+    miscFileContainer: string
+}
 
 export class ServerStructure extends BaseModelStructure<Server> {
 
@@ -18,7 +24,9 @@ export class ServerStructure extends BaseModelStructure<Server> {
 
     constructor(
         absoluteRoot: string,
-        baseUrl: string
+        baseUrl: string,
+        private discardOutput: boolean,
+        private invalidateCache: boolean
     ) {
         super(absoluteRoot, '', 'servers', baseUrl)
     }
@@ -34,26 +42,33 @@ export class ServerStructure extends BaseModelStructure<Server> {
         return this.resolvedModels
     }
 
+    public static getEffectiveId(id: string, minecraftVersion: MinecraftVersion): string {
+        return `${id}-${minecraftVersion}`
+    }
+
     public async createServer(
         id: string,
         minecraftVersion: MinecraftVersion,
         options: {
+            version?: string
             forgeVersion?: string
-            liteloaderVersion?: string
         }
-    ): Promise<void> {
-        const effectiveId = `${id}-${minecraftVersion}`
+    ): Promise<CreateServerResult | null> {
+        const effectiveId = ServerStructure.getEffectiveId(id, minecraftVersion)
         const absoluteServerRoot = resolvePath(this.containerDirectory, effectiveId)
         const relativeServerRoot = join(this.relativeRoot, effectiveId)
 
         if (await pathExists(absoluteServerRoot)) {
             this.logger.error('Server already exists! Aborting.')
-            return
+            return null
         }
 
         await mkdirs(absoluteServerRoot)
 
-        const serverMetaOpts: ServerMetaOptions = {}
+        const serverMetaOpts: ServerMetaOptions = {
+            version: options.version
+        }
+        let forgeModContainer: string | undefined = undefined
 
         if (options.forgeVersion != null) {
             const fms = VersionSegmentedRegistry.getForgeModStruct(
@@ -65,13 +80,8 @@ export class ServerStructure extends BaseModelStructure<Server> {
                 []
             )
             await fms.init()
+            forgeModContainer = fms.getContainerDirectory()
             serverMetaOpts.forgeVersion = options.forgeVersion
-        }
-
-        if (options.liteloaderVersion != null) {
-            const lms = new LiteModStructure(absoluteServerRoot, relativeServerRoot, this.baseUrl, minecraftVersion, [])
-            await lms.init()
-            serverMetaOpts.liteloaderVersion = options.liteloaderVersion
         }
 
         const serverMeta: ServerMeta = addSchemaToObject(
@@ -87,6 +97,12 @@ export class ServerStructure extends BaseModelStructure<Server> {
         const mfs = new MiscFileStructure(absoluteServerRoot, relativeServerRoot, this.baseUrl, minecraftVersion, [])
         await mfs.init()
 
+        return {
+            forgeModContainer,
+            libraryContainer: libS.getContainerDirectory(),
+            miscFileContainer: mfs.getContainerDirectory()
+        }
+
     }
 
     private async _doSeverRetrieval(): Promise<Server[]> {
@@ -97,6 +113,8 @@ export class ServerStructure extends BaseModelStructure<Server> {
             const absoluteServerRoot = resolvePath(this.containerDirectory, file)
             const relativeServerRoot = join(this.relativeRoot, file)
             if ((await lstat(absoluteServerRoot)).isDirectory()) {
+
+                this.logger.info(`Beginning processing of ${file}.`)
 
                 const match = this.ID_REGEX.exec(file)
                 if (match == null) {
@@ -112,7 +130,7 @@ export class ServerStructure extends BaseModelStructure<Server> {
                 for (const subFile of subFiles) {
                     const caseInsensitive = subFile.toLowerCase()
                     if (caseInsensitive.endsWith('.jpg') || caseInsensitive.endsWith('.png')) {
-                        iconUrl = resolveUrl(this.baseUrl, join(relativeServerRoot, subFile))
+                        iconUrl = new URL(join(relativeServerRoot, subFile), this.baseUrl).toString()
                     }
                 }
 
@@ -133,7 +151,9 @@ export class ServerStructure extends BaseModelStructure<Server> {
                         serverMeta.forge.version,
                         dirname(this.containerDirectory),
                         '',
-                        this.baseUrl
+                        this.baseUrl,
+                        this.discardOutput,
+                        this.invalidateCache
                     )
 
                     // Resolve forge
@@ -151,13 +171,6 @@ export class ServerStructure extends BaseModelStructure<Server> {
 
                     const forgeModModules = await forgeModStruct.getSpecModel()
                     modules.push(...forgeModModules)
-                }
-
-                
-                if(serverMeta.liteloader) {
-                    const liteModStruct = new LiteModStructure(absoluteServerRoot, relativeServerRoot, this.baseUrl, minecraftVersion, untrackedFiles)
-                    const liteModModules = await liteModStruct.getSpecModel()
-                    modules.push(...liteModModules)
                 }
 
                 const libraryStruct = new LibraryStructure(absoluteServerRoot, relativeServerRoot, this.baseUrl, minecraftVersion, untrackedFiles)
@@ -179,6 +192,7 @@ export class ServerStructure extends BaseModelStructure<Server> {
                     ...(serverMeta.meta.discord ? {discord: serverMeta.meta.discord} : {}),
                     mainServer: serverMeta.meta.mainServer,
                     autoconnect: serverMeta.meta.autoconnect,
+                    javaOptions: serverMeta.meta.javaOptions,
                     modules
                 })
 

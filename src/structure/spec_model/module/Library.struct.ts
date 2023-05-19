@@ -1,10 +1,10 @@
-import { ModuleStructure } from './Module.struct'
+import { ModuleStructure } from './Module.struct.js'
 import { Type, TypeMetadata } from 'helios-distribution-types'
-import { Stats } from 'fs-extra'
+import { Stats } from 'fs'
 import { join } from 'path'
-import { resolve } from 'url'
-import { MinecraftVersion } from '../../../util/MinecraftVersion'
-import { UntrackedFilesOption } from '../../../model/nebula/servermeta'
+import { URL } from 'url'
+import { MinecraftVersion } from '../../../util/MinecraftVersion.js'
+import { UntrackedFilesOption } from '../../../model/nebula/ServerMeta.js'
 
 export class LibraryStructure extends ModuleStructure {
 
@@ -36,7 +36,7 @@ export class LibraryStructure extends ModuleStructure {
     }
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     protected async getModuleUrl(name: string, path: string, stats: Stats): Promise<string> {
-        return resolve(this.baseUrl, join(this.relativeRoot, name))
+        return new URL(join(this.relativeRoot, name), this.baseUrl).toString()
     }
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     protected async getModulePath(name: string, path: string, stats: Stats): Promise<string | null> {

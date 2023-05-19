@@ -13,15 +13,15 @@ export interface UntrackedFilesOption {
 }
 
 export interface ServerMetaOptions {
+    version?: string
     forgeVersion?: string
-    liteloaderVersion?: string
 }
 
 export function getDefaultServerMeta(id: string, version: string, options?: ServerMetaOptions): ServerMeta {
 
     const servMeta: ServerMeta = {
         meta: {
-            version: '1.0.0',
+            version: options?.version ?? '1.0.0',
             name: `${id} (Minecraft ${version})`,
             description: `${id} Running Minecraft ${version}`,
             address: 'localhost:25565',
@@ -39,13 +39,6 @@ export function getDefaultServerMeta(id: string, version: string, options?: Serv
         servMeta.meta.description = `${servMeta.meta.description} (Forge v${options.forgeVersion})`
         servMeta.forge = {
             version: options.forgeVersion
-        }
-    }
-
-    if(options?.liteloaderVersion) {
-        servMeta.meta.description = `${servMeta.meta.description} (Liteloader v${options.liteloaderVersion})`
-        servMeta.liteloader = {
-            version: options.liteloaderVersion
         }
     }
 
@@ -68,6 +61,7 @@ export interface ServerMeta {
         discord?: Server['discord']
         mainServer: Server['mainServer']
         autoconnect: Server['autoconnect']
+        javaOptions?: Server['javaOptions']
     }
 
     /**
@@ -77,16 +71,6 @@ export interface ServerMeta {
         /**
          * The forge version. This does NOT include the minecraft version.
          * Ex. 14.23.5.2854
-         */
-        version: string
-    }
-
-    /**
-     * Properties related to liteloader.
-     */
-    liteloader?: {
-        /**
-         * The liteloader version.
          */
         version: string
     }

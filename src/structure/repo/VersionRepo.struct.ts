@@ -1,7 +1,7 @@
 import { join } from 'path'
-import { resolve as resolveURL } from 'url'
-import { BaseFileStructure } from '../BaseFileStructure'
-import { MinecraftVersion } from '../../util/MinecraftVersion'
+import { URL } from 'url'
+import { BaseFileStructure } from '../BaseFileStructure.js'
+import { MinecraftVersion } from '../../util/MinecraftVersion.js'
 
 export class VersionRepoStructure extends BaseFileStructure {
 
@@ -27,7 +27,7 @@ export class VersionRepoStructure extends BaseFileStructure {
 
     public getVersionManifestURL(url: string, minecraftVersion: MinecraftVersion, forgeVersion: string): string {
         const fileName = this.getFileName(minecraftVersion, forgeVersion)
-        return resolveURL(url, join(this.relativeRoot, fileName, `${fileName}.json`))
+        return new URL(join(this.relativeRoot, fileName, `${fileName}.json`), url).toString()
     }
 
 }
